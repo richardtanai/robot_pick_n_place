@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "realsense-workshop-utils"
+version = "0.0.3"
+description = "Utils for the workshop"
+
+authors = [
+    {name = "Richard", email = "richard.tanai@dlsu.edu.ph"}
+]
+license = {text = "BSD 2-clause"}
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pyrealsense2",
+    "numpy",
+    "opencv-python",
+]
+
+[tool.setuptools]
+packages = ["workshop_utils"]

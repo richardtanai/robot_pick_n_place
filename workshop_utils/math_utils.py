@@ -34,7 +34,7 @@ def xyz_zyx_to_se3(x, y, z, rz, ry, rx):
     '''
     angles in deg
     '''
-    R = rotation_matrix(rz*math.pi/180, ry*math.pi/180, rx*math.pi/180)
+    R = rotation_matrix(np.deg2rad(rz),np.deg2rad(ry), np.deg2rad(rx))
     T = np.array([[1, 0, 0, x],
                   [0, 1, 0, y],
                   [0, 0, 1, z],
@@ -86,6 +86,8 @@ def homogenous_transform(rotation=None, position=None):
 
 
 def se3_to_xyz_rzyx_mm(T): ## in mm
+
+    
     """
     Converts SE(3) matrix to (x, y, z, Rz, Ry, Rx) in radians.
     
@@ -108,7 +110,81 @@ def se3_to_xyz_rzyx_mm(T): ## in mm
         alpha = 0
         gamma = np.arctan2(-R[0,1], R[1,1])
 
-    return (p[0]*1000, p[1]*1000, p[2]*1000, gamma*180/math.pi, beta*180/math.pi ,alpha*180/math.pi) ## convert to mm and deg
+    return (p[0]*1000, p[1]*1000, p[2]*1000, gamma*180/np.pi, beta*180/np.pi ,alpha*180/np.pi) ## convert to mm and deg
+
+
+def se3_to_xyz_rzyx_stable(T, eps=1e-6):
+    """
+    Convert SE(3) to position and ZYX Euler angles (yaw-pitch-roll), stable against gimbal lock.
+    
+    Parameters:
+        T : (4,4) array - SE(3) transform
+        eps : float - threshold for gimbal lock detection
+
+    Returns:
+        pos : (3,) position vector
+        angles : (3,) list [yaw, pitch, roll] in radians
+    """
+    R = T[:3,:3]
+    t = T[:3,3]
+
+    # Clamp values to avoid NaN from arccos etc.
+    r20 = np.clip(R[2,0], -1.0, 1.0)
+
+    # Pitch = arcsin(-r20), but we use atan2 version
+    sy = np.sqrt(R[2,1]**2 + R[2,2]**2)
+
+    singular = sy < eps  # Gimbal lock near ±90 deg pitch
+
+    if not singular:
+        yaw   = np.arctan2(R[1,0], R[0,0])
+        pitch = np.arctan2(-R[2,0], sy)
+        roll  = np.arctan2(R[2,1], R[2,2])
+    else:
+        # Gimbal lock: pitch is ±90°, set roll = 0, solve for yaw
+        yaw   = np.arctan2(-R[0,1], R[1,1])
+        pitch = np.arctan2(-R[2,0], sy)  # still safe here
+        roll  = 0.0  # cannot be determined uniquely
+
+    return (t[0], t[1], t[2], yaw, pitch, roll)
+
+
+
+def se3_to_xyz_rzyx_stable_mm(T, eps=1e-6):
+    """
+    Convert SE(3) to position and ZYX Euler angles (yaw-pitch-roll), stable against gimbal lock.
+    
+    Parameters:
+        T : (4,4) array - SE(3) transform
+        eps : float - threshold for gimbal lock detection
+
+    Returns:
+        pos : (3,) position vector
+        angles : (3,) list [yaw, pitch, roll] in radians
+    """
+    R = T[:3,:3]
+    t = T[:3,3]
+
+    # Clamp values to avoid NaN from arccos etc.
+    r20 = np.clip(R[2,0], -1.0, 1.0)
+
+    # Pitch = arcsin(-r20), but we use atan2 version
+    sy = np.sqrt(R[2,1]**2 + R[2,2]**2)
+
+    singular = sy < eps  # Gimbal lock near ±90 deg pitch
+
+    if not singular:
+        yaw   = np.arctan2(R[1,0], R[0,0])
+        pitch = np.arctan2(-R[2,0], sy)
+        roll  = np.arctan2(R[2,1], R[2,2])
+    else:
+        # Gimbal lock: pitch is ±90°, set roll = 0, solve for yaw
+        yaw   = np.arctan2(-R[0,1], R[1,1])
+        pitch = np.arctan2(-R[2,0], sy)  # still safe here
+        roll  = 0.0  # cannot be determined uniquely
+
+    return (t[0]*1000, t[1]*1000, t[2]*1000, yaw*180/math.pi, pitch*180/math.pi, roll*180/math.pi)
+
 
 def se3_to_xyz_rzyx(T): 
     """
@@ -151,3 +227,43 @@ def rotation_matrix_a(axis, angle):
         return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
     elif axis == 'z':
         return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+    
+
+def se3_to_xyz_rzyx_close(T, robot, eps=1e-6):
+    
+    Rm = T[:3,:3]
+    p = T[0:3,3]
+
+
+    sy = np.sqrt(Rm[2,1]**2 + Rm[2,2]**2)
+    singular = sy < eps
+
+    if not singular:
+        yaw1   = np.arctan2(Rm[1,0], Rm[0,0])
+        pitch1 = np.arctan2(-Rm[2,0], sy)
+        roll1  = np.arctan2(Rm[2,1], Rm[2,2])
+
+        yaw2   = (yaw1 + np.pi) % (2*np.pi)
+        pitch2 = -pitch1
+        roll2  = (-roll1) % (2*np.pi)
+    else:
+        if Rm[2,0] <= -1 + eps:
+            pitch1 = np.pi/2
+        else:
+            pitch1 = -np.pi/2
+
+        yaw1 = np.arctan2(-Rm[0,1], Rm[1,1])
+        roll1 = 0.0
+
+        yaw2 = yaw1
+        pitch2 = pitch1
+        roll2 = 0.0
+
+    candidate1 = [yaw1, pitch1, roll1]
+    candidate2 = [yaw2, pitch2, roll2]
+
+    angles = robot.get_closer_euler(candidate1, candidate2)
+
+    return p, angles
+
+

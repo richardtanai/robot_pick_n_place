@@ -5,10 +5,9 @@ import pyrealsense2 as rs
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 
 # ---- Load SAM Model ----
-sam_checkpoint = r"C:\Users\Richard\Desktop\robot\realsense_workshop\robot_move\sam_vit_b_01ec64.pth"
+sam_checkpoint = r"C:\Users\Richard\Desktop\robot_demo\robot_pick_n_place\robot_move\sam_vit_b_01ec64.pth"
 model_type = "vit_b"
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda"
 
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device)

@@ -11,6 +11,7 @@ import numpy as np
 import logging
 import math
 from .math_utils import *
+from scipy.spatial.transform import Rotation as R
 
 
 logging.basicConfig(filename="AR4.log",
@@ -44,6 +45,10 @@ class AR4(object):
             logging.error("UNABLE TO ESTABLISH COMMUNICATIONS WITH TEENSY 4.1 CONTROLLER")
             logging.error(str(e))
             raise
+
+    def hello(self):
+        print("hello2")
+
 
     def __del__(self):
         self.close()
@@ -202,7 +207,7 @@ class AR4(object):
             logging.info("no calibration file found - creating empty calibration file")
             logging.info(str(e))
             calibration = "0"
-            pickle.dump(calibration, open("ARbot.cal", "wb"))
+            # pickle.dump(calibration, open("ARbot.cal", "wb"))
             print("Loading Calibration Failed")
 
         self.calibration['J1AngCur'] = calibration[0]
@@ -459,6 +464,28 @@ class AR4(object):
         return np.matmul(wrist2world, self.tool2wrist)
         
 
+    def get_closer_euler(self, candidate1, candidate2):
+
+        current_euler = [float(self.calibration['RzcurPos'])*math.pi/180, float(self.calibration['RycurPos'])*math.pi/180, float(self.calibration['RxcurPos'])*math.pi/180]
+        R_current = R.from_euler('ZYX', current_euler).as_matrix()
+        R1 = R.from_euler('ZYX', candidate1).as_matrix()
+        R2 = R.from_euler('ZYX', candidate2).as_matrix()
+        
+        # Compute relative rotations
+        R_rel1 = R1.T @ R_current
+        R_rel2 = R2.T @ R_current
+
+        # Compute rotation angles (geodesic distance)
+        angle1 = np.arccos(np.clip((np.trace(R_rel1)-1)/2, -1.0, 1.0))
+        angle2 = np.arccos(np.clip((np.trace(R_rel2)-1)/2, -1.0, 1.0))
+
+        if angle1 <= angle2:
+            return candidate1
+        else:
+            return candidate2
+
+
+
     # ---------------------------- #
     #  Robot Calibration Commands  #
     # ---------------------------- #
@@ -562,7 +589,7 @@ class AR4(object):
     def move_j_T_tool(self, tool2world):
         
         wrist2world = np.matmul(tool2world, self.wrist2tool)
-        x, y, z, rz, ry, rx, = se3_to_xyz_rzyx_mm(wrist2world)
+        x, y, z, rz, ry, rx, = se3_to_xyz_rzyx_stable_mm(wrist2world)
 
         self.move_j(x, y, z, rz, ry, rx)
 
@@ -641,8 +668,8 @@ class AR4(object):
 
         self.send_command(command)
 
-    def move_T(self, wrist2world):
-        x, y, z, rz, ry, rx, = se3_to_xyz_rzyx_mm(wrist2world)
+    def move_T(self, target_wrist2world):
+        x, y, z, rz, ry, rx, = se3_to_xyz_rzyx_mm(target_wrist2world)
         self.move_j(x, y, z, rz, ry, rx)
 
     # ----------------------- #
@@ -814,7 +841,8 @@ class AR4(object):
             logging.error(response)
 
     def save_pos_data(self):
-        pickle.dump(self.calibration, open("ARbot2.cal", "wb"))
+        # pickle.dump(self.calibration, open("ARbot2.cal", "wb"))
+        pass
 
     def set_joint_open_loop(self, joint: int):
         try:
@@ -851,5 +879,11 @@ class AR4(object):
         
 
     def grip_mm(self, d):
+
+        if d > 35:
+            d = 35
+        if  d < 0:
+            d= 0
+
         theta = math.degrees(math.asin(((d-6.75)/50))) + 17
         self.servo_cmd(0,theta)
